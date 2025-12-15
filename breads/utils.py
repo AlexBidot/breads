@@ -1,6 +1,7 @@
 import itertools
 import os
 from copy import copy
+import warnings
 
 import astropy.coordinates
 import astropy.io.fits as fits
@@ -9,6 +10,7 @@ import numpy as np
 import pandas as pd
 from astropy.time import Time
 from astroquery.simbad import Simbad
+from astroquery.exceptions import NoResultsWarning
 from py.path import local
 from scipy.interpolate import InterpolatedUnivariateSpline
 from scipy.interpolate import interp1d
@@ -819,12 +821,18 @@ def propagate_coordinates_at_epoch(targetname, date, verbose=True):
     Simbad.add_votable_fields("dec")  # Retrieve proper motion in RA
     Simbad.add_votable_fields("pmra")  # Retrieve proper motion in RA
     Simbad.add_votable_fields("pmdec")  # Retrieve proper motion in Dec.
-    Simbad.add_votable_fields("plx")  # Retrieve parallax
+    Simbad.add_votable_fields("plx_value")  # Retrieve parallax
 
     if verbose:
         print(f"Retrieving SIMBAD coordinates for {targetname}")
 
-    result_table = Simbad.query_object(targetname)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", NoResultsWarning)
+        try:
+            result_table = Simbad.query_object(targetname)
+        except NoResultsWarning:
+            raise ValueError("Invalid target name {targetname} for Simbad query, try with manual target name input")
+
 
     # Get the coordinates and proper motion from the result table
     ra = result_table["ra"][0]
