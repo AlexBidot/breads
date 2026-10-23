@@ -1169,7 +1169,7 @@ class JWST_IFUs(ABC):
 
         if save_utils:
             self._save_starspectrum_contnorm(save_utils, new_wavelengths, combined_fluxes, combined_errors,
-                                             spline_cont0, spline_paras0, wv_nodes, normalized_im,stellar_features)
+                                             spline_cont0, spline_paras0, wv_nodes, normalized_im, stellar_features)
 
         return new_wavelengths, combined_fluxes, combined_errors, spline_cont0, spline_paras0, wv_nodes
 
@@ -2090,6 +2090,8 @@ class JWST_IFUs(ABC):
 
         for trace_id in range(Ntraces):
             wvs_finite, where_finite = self._get_where_finite(trace_id)
+            if np.size(wvs_finite[0]) == 0 or np.size(where_finite[0]) == 0:
+                continue
 
             # interpolates everything row by row. Different behavior between NIRSpec and MIRI
             self._interpdata_regwvs_trace(regwvs_tmpobj, wv_sampling, wvs_finite, where_finite, trace_id)
