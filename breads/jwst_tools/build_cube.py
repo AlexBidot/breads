@@ -42,6 +42,7 @@ def _build_cube_task(inputs):
     psf_interp = _interp_psf(psf_interp_paras)
 
     if psf_interp is None:
+        print("WARNING psf_interp_paras is None")
         return mfflux_arr,mffluxerr_arr
 
     for k in range(ny):
@@ -208,14 +209,8 @@ def build_cube(dataobj,
     _e = dataobj.noise
     _bp = dataobj.bad_pixels
 
+
     ifu_name = dataobj.ifu_name
-    if ifu_name == 'miri':
-        raise Exception("Not yet implemented.")
-        # all_interp_ra = all_interp_ra.transpose()
-        # all_interp_dec = all_interp_dec.transpose()
-        # all_interp_flux = all_interp_flux.transpose()
-        # all_interp_err = all_interp_err.transpose()
-        # all_interp_badpix = all_interp_badpix.transpose()
 
     if hasattr(dataobj, "filelist"):
         N_dithers = len(dataobj.filelist)

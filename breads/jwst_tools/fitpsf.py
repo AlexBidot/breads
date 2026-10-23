@@ -268,7 +268,7 @@ def fitpsf(dataobj, ref_dataobj = None,
                                 "COORUNIT": dataobj.breads_header['COORUNIT']}
         wpsfsfit_header = {"INIT_ANG": rotate_psf, "INIT_X": init_paras[0], "INIT_Y": init_paras[1]}
         _breads_header = dataobj.breads_header
-        _breads_header.update(wpsfsfit_header)
+        _breads_header.update(_handle_nan_header_dict(wpsfsfit_header))
         hdulist = pyfits.HDUList()
         hdulist.append(pyfits.PrimaryHDU(header=dataobj.priheader))
         hdulist.append(pyfits.ImageHDU(data=bestfit_paras, name = "BESTPARA",header=pyfits.Header(cards=bestfit_paras_header)))
@@ -297,6 +297,17 @@ def fitpsf(dataobj, ref_dataobj = None,
 
 
     return bestfit_paras, _d, bestfit_model, residuals
+
+def _handle_nan_header_dict(d):
+    """Replace non-finite floats with a FITS-safe placeholder before writing to header."""
+    import math
+    clean = {}
+    for k, v in d.items():
+        if isinstance(v, float) and not math.isfinite(v):
+            clean[k] = 'NaN'
+        else:
+            clean[k] = v
+    return clean
 
 
 def _fit_wpsf_task(paras):
