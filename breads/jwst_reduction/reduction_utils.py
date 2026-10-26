@@ -3806,6 +3806,14 @@ def sort_by_target_name(input_dir, filetype='uncal.fits'):
     return dict(targname_groups)
 
 
+def retrieve_mrs_data(uncaldir, target_name, combined_channel_band):
+    """Function to select the stage 2 MRS files for a desired band and target name for the default output path."""
+    cal_dir = os.path.join(uncaldir, target_name, combined_channel_band, 'stage2')
+    print(f'Searching cal files in {cal_dir}')
+    filelist = find_files_to_process(cal_dir, filetype='cal.fits')
+    return filelist
+
+
 def select_miri_output_directory(uncal_path, target_name, channel, band):
     """Short function to select the right MIRI output directory"""
 
