@@ -2,6 +2,7 @@ import os
 import inspect
 import signal
 import traceback
+import warnings
 import contextlib
 import multiprocessing as mp
 from concurrent.futures import (ProcessPoolExecutor, Future, wait,
@@ -19,7 +20,7 @@ from tqdm import tqdm
 from breads.jwst_tools.PositiveEtalonModel import PositiveEtalonModel
 
 try:
-    from BayesicFitting import SplinesModel, LevenbergMarquardtFitter
+    from BayesicFitting import SplinesModel, LevenbergMarquardtFitter, ConvergenceError
 except ImportError:
     # these are optional dependencies for BREADS JWST support; OK to ignore them for
     # non-JWST BREADS usage
@@ -435,10 +436,16 @@ def _build_full_fit_model(kind, Nc, Nf, ND, wnum):
 # Helpers function to mask the data, fit FP models, and search for chi2 minimum
 # ====================================================================
 
+# Converged fits take a few hundred iterations at most (~270 measured on band
+# 3B); BayesicFitting's default (1000 x number of parameters, i.e. ~1e5) makes
+# a diverging fit run for minutes before raising ConvergenceError.
+LM_MAXITER = 2000
+
+
 def _fit_lm(wnum, mdl, flux, weights=None, plot=False):
     """Single entry point for all LM fits in this module."""
     fitter = LevenbergMarquardtFitter(wnum, mdl)
-    return fitter.fit(flux, weights=weights, plot=plot)
+    return fitter.fit(flux, weights=weights, plot=plot, maxiter=LM_MAXITER)
 
 
 def _chi2(flux, mdl, wnum, param):
@@ -450,7 +457,8 @@ def _grid_search_frequency(wnum, flux, weights, freq_grid, build_model, plot=Fal
     """Searches, over freq_grid, for the frequency that minimizes chi2.
 
     build_model(freq) must return a model ready to be fitted for that frequency.
-    Grid points whose fit fails (LinAlgError) are ignored.
+    Grid points whose fit fails (LinAlgError, or ConvergenceError when the
+    model diverges to inf/nan) or gives a non-finite chi2 are ignored.
     Returns (best_freq, best_param, best_model, chi2_array).
     """
     chi2 = np.full(len(freq_grid), np.inf)
@@ -459,9 +467,12 @@ def _grid_search_frequency(wnum, flux, weights, freq_grid, build_model, plot=Fal
         mdl = build_model(freq)
         try:
             param = _fit_lm(wnum, mdl, flux, weights=weights, plot=plot)
-        except LinAlgError:
+        except (LinAlgError, ConvergenceError):
             continue
-        chi2[k] = _chi2(flux, mdl, wnum, param)
+        chi2_k = _chi2(flux, mdl, wnum, param)
+        if not np.isfinite(chi2_k):
+            continue
+        chi2[k] = chi2_k
         # strict '<': on ties keep the first one, like np.argmin
         if best_idx is None or chi2[k] < chi2[best_idx]:
             best_idx, best_param, best_model = k, param, mdl
@@ -623,13 +634,21 @@ def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
     result_kind = 'basic'
 
     # ---- Stage 3 (optional): second cavity ----
+    # If every fit of a grid fails, the column keeps the result of the previous stage.
+    param_sc = None
     if second_cavity_grid is not None:
-        _, param_sc, _, _ = _grid_search_frequency(
-            wnum, flux, weights, second_cavity_grid,
-            build_model=lambda f: get_model_continuum_finesse_frequency_double_cavity(
-                Nc, Nf, ND, wnum, param_continuum, param_finesse, param_D, freq_second_cavity=f),
-            plot=plot,
-        )
+        try:
+            _, param_sc, _, _ = _grid_search_frequency(
+                wnum, flux, weights, second_cavity_grid,
+                build_model=lambda f: get_model_continuum_finesse_frequency_double_cavity(
+                    Nc, Nf, ND, wnum, param_continuum, param_finesse, param_D, freq_second_cavity=f),
+                plot=plot,
+            )
+        except LinAlgError:
+            warnings.warn(f"Column {col_id} (band {band}): second cavity fit failed, "
+                          f"keeping the main cavity fit.")
+            dichroics_grid = None
+    if param_sc is not None:
         param_continuum = param_sc[:Nc + 2]
         param_finesse = param_sc[Nc + 2:Nc + Nf + 4]
         param_D = param_sc[Nc + Nf + 4:Nc + ND + Nf + 6]
@@ -658,10 +677,14 @@ def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
                     freq_second_cavity=f)
             next_kind = 'second_cavity'
 
-        _, result_param, _, _ = _grid_search_frequency(
-            wnum, flux, weights, dichroics_grid, build_model=build, plot=plot,
-        )
-        result_kind = next_kind
+        try:
+            _, result_param, _, _ = _grid_search_frequency(
+                wnum, flux, weights, dichroics_grid, build_model=build, plot=plot,
+            )
+            result_kind = next_kind
+        except LinAlgError:
+            warnings.warn(f"Column {col_id} (band {band}): {next_kind} fit failed, "
+                          f"keeping the {result_kind} fit.")
 
     # ---- Building the final flat according to the enabled stages ----
     param_continuum_final = result_param[:Nc + 2]
