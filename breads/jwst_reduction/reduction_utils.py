@@ -3820,8 +3820,12 @@ def select_miri_output_directory(uncal_path, target_name, channel, band):
     return os.path.join(uncal_path, target_name, channel + band_alias, 'stage1')
 
 
-def run_stage1_miri(uncal_path, list_bands=None, overwrite=False, maximum_cores="1", skip_dark=False, save_rateints=False):
-    """Run pipeline stage 1, with some customizations for reductions"""
+def run_stage1_miri(uncal_path, list_bands=None, overwrite=False, maximum_cores="1", skip_dark=False, save_rateints=False,
+                    verbose=False):
+    """Run pipeline stage 1, with some customizations for reductions
+
+    If verbose is False, the INFO log of the JWST pipeline is not printed (warnings and errors still are).
+    """
 
     if list_bands is None:
         list_bands = ['12A', '12B', '12C', '34A', '34B', '34C']
@@ -3878,7 +3882,7 @@ def run_stage1_miri(uncal_path, list_bands=None, overwrite=False, maximum_cores=
                 }
 
                 det1.call(file, save_results=True, output_dir=output_dir,
-                          steps=step_parameters)
+                          steps=step_parameters, configure_log=verbose)
 
                 if save_rateints is False:
                     # Remove the rateints file that det1 just saved for this exposure
@@ -4053,7 +4057,11 @@ def flat_pixel_stage1(uncal_path, target_name, list_bands=None, pixel_flat_path=
 
 def run_stage2_miri(uncal_path, target_name, list_bands=None, custom_flatted=True, custom_bkg_sub=False, skip_cubes=True, skip_fringe=False,
                     skip_residual_fringes=False,
-                    skip_flatfield=False, skip_straylight=True, overwrite=False):
+                    skip_flatfield=False, skip_straylight=True, overwrite=False, verbose=False):
+    """Run pipeline stage 2 on the MIRI/MRS rate files.
+
+    If verbose is False, the INFO log of the JWST pipeline is not printed (warnings and errors still are).
+    """
     if list_bands is None:
         list_bands = ['12A', '12B', '12C', '34A', '34B', '34C']
 
@@ -4109,7 +4117,7 @@ def run_stage2_miri(uncal_path, target_name, list_bands=None, custom_flatted=Tru
             spec2.save_bsub = True
 
             spec2.call(rate_file, save_results=True, output_dir=outputdir,
-                       steps=step_parameters)
+                       steps=step_parameters, configure_log=verbose)
 
         # Print out the time benchmark
         time1 = time.perf_counter()
@@ -4120,7 +4128,11 @@ def run_stage2_miri(uncal_path, target_name, list_bands=None, custom_flatted=Tru
     return cal_files
 
 
-def run_stage3_miri(uncal_path, target_name, list_bands=None, overwrite=False):
+def run_stage3_miri(uncal_path, target_name, list_bands=None, overwrite=False, verbose=False):
+    """Run pipeline stage 3 on the MIRI/MRS cal files.
+
+    If verbose is False, the INFO log of the JWST pipeline is not printed (warnings and errors still are).
+    """
     if list_bands is None:
         list_bands = ['12A', '12B', '12C', '34A', '34B', '34C']
     for band in list_bands:
@@ -4153,15 +4165,16 @@ def run_stage3_miri(uncal_path, target_name, list_bands=None, overwrite=False):
                 writel3asn(thesefiles, filename, 'Level3')
         print("asnlist", asnlist)
 
-        runspec3(asnlist[0], outputdir)
+        runspec3(asnlist[0], outputdir, verbose=verbose)
 
 
-def run_full_miri_default_pipeline(uncal_path, target_name, list_bands=None, overwrite=False):
-    run_stage1_miri(uncal_path, list_bands=list_bands, overwrite=overwrite, maximum_cores="1", skip_dark=False)
+def run_full_miri_default_pipeline(uncal_path, target_name, list_bands=None, overwrite=False, verbose=False):
+    run_stage1_miri(uncal_path, list_bands=list_bands, overwrite=overwrite, maximum_cores="1", skip_dark=False,
+                    verbose=verbose)
     run_stage2_miri(uncal_path, target_name, list_bands=list_bands, custom_flatted=False, skip_cubes=False,
                     skip_fringe=False, skip_residual_fringes=True, skip_flatfield=False, skip_straylight=False,
-                    overwrite=overwrite)
-    run_stage3_miri(uncal_path, target_name, list_bands=list_bands, overwrite=overwrite)
+                    overwrite=overwrite, verbose=verbose)
+    run_stage3_miri(uncal_path, target_name, list_bands=list_bands, overwrite=overwrite, verbose=verbose)
 
     return 1
 
@@ -4208,7 +4221,7 @@ def sort_calfiles(files):
     return files12A, files12B, files12C, files34A, files34B, files34C
 
 
-def runspec3(filename, outputdir):
+def runspec3(filename, outputdir, verbose=False):
     # This initial setup is just to make sure that we get the latest parameter reference files
     # pulled in for our files.  This is a temporary workaround to get around an issue with
     # how this pipeline calling method works.
@@ -4224,7 +4237,24 @@ def runspec3(filename, outputdir):
     spec3.cube_build.skip = False  # Build the composite data cubes
     spec3.extract_1d.skip = False  # Extract 1d spectra from the composite data cubes
 
-    spec3.process(filename)
+    # process() does not configure the stpipe log handlers (unlike call()), so the log is silent by default
+    if verbose:
+        import logging
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        loggers = [logging.getLogger(name) for name in ("stpipe", "jwst")]
+        previous_levels = [log.level for log in loggers]
+        for log in loggers:
+            log.addHandler(handler)
+            log.setLevel(logging.INFO)
+        try:
+            spec3.process(filename)
+        finally:
+            for log, level in zip(loggers, previous_levels):
+                log.removeHandler(handler)
+                log.setLevel(level)
+    else:
+        spec3.process(filename)
 
 
 def best_flat_selection(cal_file, flat_dir, channel, flat_extended=False, save_png=True, full_output=False):
