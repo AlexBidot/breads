@@ -19,7 +19,7 @@ from breads.jwst_tools.flat_miri_utils import beta_masking_inverse_slice
 from breads.jwst_tools.splines import normalize_rows
 from scipy.ndimage import generic_filter
 from breads.instruments.jwst_IFUs import JWST_IFUs
-from breads.jwst_tools.default_miri import wv_ref_dict
+from breads.jwst_tools.default_miri import wv_ref_dict, sub_band_from_name
 
 
 class JWSTMiri_cal(JWST_IFUs):
@@ -77,30 +77,22 @@ class JWSTMiri_cal(JWST_IFUs):
             Must be set to '1', '2' '3' or '4'. It selects the targeted channel we want to use for the reduction.
         """
 
-        self.band = self.priheader["BAND"]
-        self.channel = self.priheader['CHANNEL']
+        self.sub_band_name = self.priheader["BAND"]
+        self.combined_channel = self.priheader['CHANNEL']
 
         if type(channel_reduction) is str:
             self.channel_reduction = channel_reduction
         if type(channel_reduction) is int:
             self.channel_reduction = str(channel_reduction)
 
-        if self.channel_reduction not in self.channel:
+        if self.channel_reduction not in self.combined_channel:
             raise ValueError(
-                f'Channel {self.channel_reduction} set for reduction but the cal files channel {self.channel} do not match')
+                f'Channel {self.channel_reduction} set for reduction but the cal files channel {self.combined_channel} do not match')
 
-        self.band_aka = self.channel
-        self.band_reduction_aka = self.channel_reduction
-        if self.band == 'SHORT':
-            self.band_aka += 'A'
-            self.band_reduction_aka += 'A'
-        elif self.band == 'MEDIUM':
-            self.band_aka += 'B'
-            self.band_reduction_aka += 'B'
-        elif self.band == 'LONG':
-            self.band_aka += 'C'
-            self.band_reduction_aka += 'C'
-        self.breads_header['CHANNEL_BAND'] = self.band_reduction_aka
+        self.sub_band = sub_band_from_name(self.sub_band_name)
+        self.combined_channel_band = self.combined_channel + self.sub_band
+        self.channel_band = self.channel_reduction + self.sub_band
+        self.breads_header['CHANNEL_BAND'] = self.channel_band
         path_photom_crds = os.path.join(self.crds_dir, 'references/jwst/miri/')
 
         fitsfile_crds = os.listdir(path_photom_crds)
@@ -110,13 +102,13 @@ class JWSTMiri_cal(JWST_IFUs):
                 hdr_photom = hdu_photom[0].header
                 if hdr_photom['DETECTOR'] == 'MIRIMAGE':
                     continue
-                if hdr_photom['CHANNEL'] == self.channel and hdr_photom['BAND'] == self.band:
+                if hdr_photom['CHANNEL'] == self.combined_channel and hdr_photom['BAND'] == self.sub_band_name:
                     area2d_fits = file_crds
                     print(f"Photom file selected: {file_crds}")
                 hdu_photom.close()
 
         self.area2d = fits.open(os.path.join(path_photom_crds, area2d_fits))['PIXSIZ'].data #in steradian
-        if channel_reduction == '1' or channel_reduction == '4':
+        if self.channel_reduction == '1' or self.channel_reduction == '4':
             self.pixelscale = np.sqrt(np.nanmedian(self.area2d[10:-10, 20:500]) * 4.25e10)  # steradian to arcsec
         else:
             self.pixelscale = np.sqrt(np.nanmedian(self.area2d[10:-10, 500:-20]) * 4.25e10)
@@ -138,7 +130,7 @@ class JWSTMiri_cal(JWST_IFUs):
             self.mask_channel[:, 507:] = 1
         self.data *= self.mask_channel
         self.wavelengths *= self.mask_channel
-        self.wv_ref = wv_ref_dict[self.band_reduction_aka]
+        self.wv_ref = wv_ref_dict[self.channel_band]
         self.breads_header['WV_REF'] = self.wv_ref
 
     def _init_wave_wcs(self, filename):
@@ -327,7 +319,7 @@ class JWSTMiri_cal(JWST_IFUs):
             ('4C'): 2600,
         }
 
-        key = (self.band_reduction_aka)
+        key = (self.channel_band)
 
         try:
             self.R = R_table[key]
@@ -748,7 +740,7 @@ class JWSTMiri_cal(JWST_IFUs):
         """Hook for MIRI, create a mask to only keep high SNR data before computing continuum normalized star spectrum."""
         continuum = np.copy(continuum)
 
-        mask_brightest_slices = beta_masking_inverse_slice(self.data.transpose(), self.beta.transpose(), int(self.channel_reduction),
+        mask_brightest_slices = beta_masking_inverse_slice(self.data.transpose(), self.beta.transpose(), self.channel_reduction,
                                                            N_slices=4)
         mask_brightest_slices[mask_brightest_slices == 0] = np.nan
         continuum *= mask_brightest_slices.transpose()
@@ -976,7 +968,7 @@ class JWSTMiri_cal(JWST_IFUs):
 
     def _interpdata_regwvs_trace(self, regwvs_dataobj, wv_sampling, wvs_finite, where_finite, trace_id):
         """Hook for MIRI, method to interpolate the data over regular wavelength grid."""
-        if self.channel == '34':
+        if self.combined_channel == '34':
             print("Flipping the wavelength axis for channel 34")
             regwvs_dataobj.x[trace_id] = np.interp(wv_sampling,
                                                               np.flip(self.wavelengths[trace_id, wvs_finite[0]]),

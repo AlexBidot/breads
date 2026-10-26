@@ -42,10 +42,10 @@ _BLAS_THREAD_ENV_VARS = (
     "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS",
 )
 
-# Detector columns processed for each of the two sub-bands of a rate file
+# Detector columns processed for each of the two channel bands of a rate file
 # (left half / right half of the detector).
-FIRST_BAND_COLUMNS = range(5, 500)
-SECOND_BAND_COLUMNS = range(500, 1010)
+LEFT_COLUMNS = range(5, 500)
+RIGHT_COLUMNS = range(500, 1010)
 
 
 # ====================================================================
@@ -81,20 +81,20 @@ def load_data_and_wcs(filename):
     return data, DQ, err, alpha, beta, wave
 
 
-def get_optimal_number_nodes(band):
-    if band in ('1A', '1B', '1C'):
+def get_optimal_number_nodes(channel_band):
+    if channel_band in ('1A', '1B', '1C'):
         return 50, 15, 20
-    elif band in ('2A', '2B', '2C'):
+    elif channel_band in ('2A', '2B', '2C'):
         return 80, 20, 20
-    elif band in ('3A', '3B', '3C'):
+    elif channel_band in ('3A', '3B', '3C'):
         return 30, 20, 20
-    elif band in ('4A', '4B', '4C'):
+    elif channel_band in ('4A', '4B', '4C'):
         return 30, 15, 20
     else:
-        raise ValueError(f'band {band} not recognized')
+        raise ValueError(f'band {channel_band} not recognized')
 
 
-def get_first_guess(band, fast=False):
+def get_first_guess(channel_band, fast=False):
     grids = {
         '1A': ((3.35, 3.55, 0.02), (3.35, 3.55, 0.005)),
         '1B': ((3.35, 3.55, 0.02), (3.35, 3.55, 0.005)),
@@ -109,7 +109,7 @@ def get_first_guess(band, fast=False):
         '4B': ((2.8, 2.9, 0.02), (2.8, 2.9, 0.005)),
         '4C': ((2.8, 2.9, 0.02), (2.8, 2.9, 0.005)),
     }
-    fast_range, slow_range = grids[band]
+    fast_range, slow_range = grids[channel_band]
     lo, hi, step = fast_range if fast else slow_range
     return np.arange(lo, hi, step) / 10
 
@@ -483,7 +483,7 @@ def _grid_search_frequency(wnum, flux, weights, freq_grid, build_model, plot=Fal
     return freq_grid[best_idx], best_param, best_model, chi2
 
 
-def _prepare_column(data, wave, err, beta, col_id, band, snr_thresh,
+def _prepare_column(data, wave, err, beta, col_id, channel_band, snr_thresh,
                      N_continuum, N_D, N_finesse, DQ=None):
     """Extraction + cleaning of one column's data, and computation of the
     number of spline nodes adjusted to the density of valid points.
@@ -503,7 +503,7 @@ def _prepare_column(data, wave, err, beta, col_id, band, snr_thresh,
     wnum, flux, err_c, bad_pixel_col = identify_badpix(wave, data, err, beta, col_id, DQ=DQ)
 
     if N_continuum is None or N_D is None or N_finesse is None:
-        N_continuum, N_D, N_finesse = get_optimal_number_nodes(band)
+        N_continuum, N_D, N_finesse = get_optimal_number_nodes(channel_band)
 
     r = len(wnum) / 970
     N_continuum = max(5, int(N_continuum * r))
@@ -554,7 +554,7 @@ def _plot_debug_model(wnum, param, Nc, Nf, ND):
 # Fit the FP model to one single column with different model possibilities with respect to the band
 # ====================================================================
 
-def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
+def fit_FP_bayesian_core(data, wave, beta, err, channel_band, col_id, snr_thresh,
                           plot=False, plot_model=False, spectrum=None,
                           N_continuum=50, N_D=15, N_finesse=10,
                           mask_star_lines=True, fast=True, DQ=None,
@@ -582,12 +582,12 @@ def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
     continuum = np.full_like(wave[:, col_id], np.nan)
     bad_pixel_col = None
 
-    prep = _prepare_column(data, wave, err, beta, col_id, band, snr_thresh,
+    prep = _prepare_column(data, wave, err, beta, col_id, channel_band, snr_thresh,
                             N_continuum, N_D, N_finesse, DQ=DQ)
     if prep is None:
         flat[flat < 0.1] = 1
         fit_info = dict(
-            kind='skipped', band=band, Nc=None, ND=None, Nf=None,
+            kind='skipped', band=channel_band, Nc=None, ND=None, Nf=None,
             wnum=np.array([]), flux=np.array([]), err=np.array([]),
             param=np.array([]),
         )
@@ -605,7 +605,7 @@ def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
     weights = 1 / err_c ** 2 if use_weights else None
 
     # ---- Stage 1: continuum + D, search for the main etalon's frequency ----
-    freq_grid_1 = get_first_guess(band, fast=fast)
+    freq_grid_1 = get_first_guess(channel_band, fast=fast)
     _, param, _, chi2 = _grid_search_frequency(
         wnum, flux, weights, freq_grid_1,
         build_model=lambda f: get_model_continuum_frequency(Nc, ND, wnum, flux, f),
@@ -645,7 +645,7 @@ def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
                 plot=plot,
             )
         except LinAlgError:
-            warnings.warn(f"Column {col_id} (band {band}): second cavity fit failed, "
+            warnings.warn(f"Column {col_id} (band {channel_band}): second cavity fit failed, "
                           f"keeping the main cavity fit.")
             dichroics_grid = None
     if param_sc is not None:
@@ -683,7 +683,7 @@ def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
             )
             result_kind = next_kind
         except LinAlgError:
-            warnings.warn(f"Column {col_id} (band {band}): {next_kind} fit failed, "
+            warnings.warn(f"Column {col_id} (band {channel_band}): {next_kind} fit failed, "
                           f"keeping the {result_kind} fit.")
 
     # ---- Building the final flat according to the enabled stages ----
@@ -704,7 +704,7 @@ def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
     flat[flat < 0.1] = 1  # hard thresholding
 
     fit_info = dict(
-        kind=result_kind, band=band, Nc=Nc, ND=ND, Nf=Nf,
+        kind=result_kind, band=channel_band, Nc=Nc, ND=ND, Nf=Nf,
         wnum=wnum, flux=flux, err=err_c,
         param=np.asarray(result_param, dtype=np.float64),
     )
@@ -715,26 +715,26 @@ def fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
 # ---- Fit function for the different bands ----
 # ====================================================================
 
-def fit_FP_bayesian(data, wave, beta, err, band, col_id, snr_thresh, **kwargs):
+def fit_FP_bayesian(data, wave, beta, err, channel_band, col_id, snr_thresh, **kwargs):
     """Channel 1 bands: no dichroics, no second cavity."""
-    return fit_FP_bayesian_core(data, wave, beta, err, band, col_id, snr_thresh,
+    return fit_FP_bayesian_core(data, wave, beta, err, channel_band, col_id, snr_thresh,
                                  use_weights=True, **kwargs)
 
 
-def fit_FP_bayesian_ch2(data, wave, beta, err, band, col_id, snr_thresh, **kwargs):
+def fit_FP_bayesian_ch2(data, wave, beta, err, channel_band, col_id, snr_thresh, **kwargs):
     """Bands 2A / 2B: first cavity + second cavity."""
     return fit_FP_bayesian_core(
-        data, wave, beta, err, band, col_id, snr_thresh,
+        data, wave, beta, err, channel_band, col_id, snr_thresh,
         use_weights=True,
         second_cavity_grid=np.arange(3.1, 3.3, 0.01) / 10,
         **kwargs,
     )
 
 
-def fit_FP_bayesian_ch2c(data, wave, beta, err, band, col_id, snr_thresh, **kwargs):
+def fit_FP_bayesian_ch2c(data, wave, beta, err, channel_band, col_id, snr_thresh, **kwargs):
     """Band 2C: first cavity + second cavity + dichroics."""
     return fit_FP_bayesian_core(
-        data, wave, beta, err, band, col_id, snr_thresh,
+        data, wave, beta, err, channel_band, col_id, snr_thresh,
         use_weights=True,
         second_cavity_grid=np.arange(3.1, 3.3, 0.03) / 10,
         dichroics_grid=np.arange(2.65, 2.85, 0.01),
@@ -743,10 +743,10 @@ def fit_FP_bayesian_ch2c(data, wave, beta, err, band, col_id, snr_thresh, **kwar
 
 
 
-def fit_FP_bayesian_ch3(data, wave, beta, err, band, col_id, snr_thresh, **kwargs):
+def fit_FP_bayesian_ch3(data, wave, beta, err, channel_band, col_id, snr_thresh, **kwargs):
     """Bands 3A, 3B, 3C: first cavity + second cavity + dichroics."""
     return fit_FP_bayesian_core(
-        data, wave, beta, err, band, col_id, snr_thresh,
+        data, wave, beta, err, channel_band, col_id, snr_thresh,
         use_weights=True,
         second_cavity_grid=np.arange(0.26, 0.30, 0.001),
         dichroics_grid=np.arange(2.65, 2.85, 0.01),
@@ -780,18 +780,18 @@ FIT_MODEL_LABEL = {
 }
 
 
-def get_fit_function(band):
-    """Return the fit function optimized for the given band."""
-    return FIT_DISPATCH.get(band, fit_FP_bayesian_ch3)
+def get_fit_function(channel_band):
+    """Return the fit function optimized for the given channel band."""
+    return FIT_DISPATCH.get(channel_band, fit_FP_bayesian_ch3)
 
 
-def get_fit_model_label(band):
-    """Human-readable label of the fit model used for this band
+def get_fit_model_label(channel_band):
+    """Human-readable label of the fit model used for this channel band
     ('first cavity only', 'first cavity + second cavity', or
     'first cavity + second cavity + dichroics') — used for the FITS header
     metadata.
     """
-    return FIT_MODEL_LABEL.get(get_fit_function(band), 'unknown')
+    return FIT_MODEL_LABEL.get(get_fit_function(channel_band), 'unknown')
 
 
 def _call_fit(func, **kwargs):
@@ -809,9 +809,9 @@ def _call_fit(func, **kwargs):
     return func(**{k: v for k, v in kwargs.items() if k in params})
 
 
-def _empty_fit_info(kind, band):
+def _empty_fit_info(kind, channel_band):
     return dict(
-        kind=kind, band=band, Nc=None, ND=None, Nf=None,
+        kind=kind, band=channel_band, Nc=None, ND=None, Nf=None,
         wnum=np.array([]), flux=np.array([]), err=np.array([]),
         param=np.array([]),
     )
@@ -843,7 +843,7 @@ def _init_worker(options, limit_threads=True):
         _limit_blas_threads()
 
 
-def _fit_column_task(band, col_id, columns):
+def _fit_column_task(channel_band, col_id, columns):
     """Fits one column. `columns` = (data, wave, beta, err, DQ), each of shape
     (ny, 1): only the relevant column is sent to the worker.
 
@@ -854,13 +854,13 @@ def _fit_column_task(band, col_id, columns):
     opts = _WORKER_OPTIONS
     try:
         f, _, c, bp_col, fit_info = _call_fit(
-            get_fit_function(band),
+            get_fit_function(channel_band),
             data=data, wave=wave, beta=beta, err=err, DQ=DQ,
-            band=band, col_id=0, plot=False, **opts,
+            channel_band=channel_band, col_id=0, plot=False, **opts,
         )
         return col_id, f, c, bp_col, fit_info, None
     except Exception:
-        return col_id, None, None, None, _empty_fit_info('error', band), traceback.format_exc()
+        return col_id, None, None, None, _empty_fit_info('error', channel_band), traceback.format_exc()
 
 
 # ====================================================================
@@ -910,25 +910,25 @@ class _InlineExecutor:
         pass
 
 
-def _split_band(band):
-    """'12A' -> ('1A', '2A') ; '34A' -> ('4A', '3A'): sub-band of columns
-    5-499, then sub-band of columns 500-1009."""
-    if band[0] == '1':
-        return band[0] + band[2], band[1] + band[2]
-    return band[1] + band[2], band[0] + band[2]
+def _split_band(combined_channel_band):
+    """'12A' -> ('1A', '2A') ; '34A' -> ('4A', '3A'): channel band of columns
+    5-499, then channel band of columns 500-1009."""
+    if combined_channel_band[0] == '1':
+        return combined_channel_band[0] + combined_channel_band[2], combined_channel_band[1] + combined_channel_band[2]
+    return combined_channel_band[1] + combined_channel_band[2], combined_channel_band[0] + combined_channel_band[2]
 
 
 class _FileJob:
     """State of a rate file being processed: accumulates the column results
     and writes the *_fit_flat.fits file once everything has been received."""
 
-    def __init__(self, save_filename, prim_header, shape, first_band, second_band,
-                 first_band_fitted):
+    def __init__(self, save_filename, prim_header, shape, channel_band_left, channel_band_right,
+                 channel_band_left_fitted):
         self.save_filename = save_filename
         self.prim_header = prim_header
-        self.first_band = first_band
-        self.second_band = second_band
-        self.first_band_fitted = first_band_fitted
+        self.channel_band_left = channel_band_left
+        self.channel_band_right = channel_band_right
+        self.channel_band_left_fitted = channel_band_left_fitted
 
         self.flat = np.ones(shape)
         self.continuum = np.full(shape, np.nan)
@@ -938,11 +938,11 @@ class _FileJob:
         self.remaining = 0
 
     def tasks(self):
-        if self.first_band_fitted:
-            for col_id in FIRST_BAND_COLUMNS:
-                yield self.first_band, col_id
-        for col_id in SECOND_BAND_COLUMNS:
-            yield self.second_band, col_id
+        if self.channel_band_left_fitted:
+            for col_id in LEFT_COLUMNS:
+                yield self.channel_band_left, col_id
+        for col_id in RIGHT_COLUMNS:
+            yield self.channel_band_right, col_id
 
     def add(self, col_id, f, c, bp_col, fit_info):
         if f is not None:
@@ -962,14 +962,14 @@ class _FileJob:
         hdr = primary_hdu.header
 
         # ---- Metadata: which fit model was used for each band ----
-        if self.first_band_fitted:
-            hdr['BAND1'] = (self.first_band, 'Sub-band fit for columns 5-499')
-            hdr['BAND1MDL'] = (get_fit_model_label(self.first_band), 'Fabry-Perot model used for BAND1')
+        if self.channel_band_left_fitted:
+            hdr['BAND1'] = (self.channel_band_left, 'Channel band fit for columns 5-499')
+            hdr['BAND1MDL'] = (get_fit_model_label(self.channel_band_left), 'Fabry-Perot model used for BAND1')
         else:
-            hdr['BAND1'] = (self.first_band, 'Sub-band for columns 5-499 (not fitted)')
+            hdr['BAND1'] = (self.channel_band_left, 'Channel band for columns 5-499 (not fitted)')
             hdr['BAND1MDL'] = ('skipped', 'Channel 4 fringe estimation skipped')
-        hdr['BAND2'] = (self.second_band, 'Sub-band fit for columns 500-1009')
-        hdr['BAND2MDL'] = (get_fit_model_label(self.second_band), 'Fabry-Perot model used for BAND2')
+        hdr['BAND2'] = (self.channel_band_right, 'Channel band fit for columns 500-1009')
+        hdr['BAND2MDL'] = (get_fit_model_label(self.channel_band_right), 'Fabry-Perot model used for BAND2')
 
         hdul_list = [
             primary_hdu,
@@ -1031,7 +1031,7 @@ def _build_fit_params_hdu(fit_records):
 
 
 def _iter_files_to_fit(uncaldir, targetname, list_bands, bkg_sub, skip_4, overwrite):
-    """Yields (band, rate_file, save_filename, first_band_fitted) for each
+    """Yields (combined_channel_band, rate_file, save_filename, channel_band_left_fitted) for each
     file to process, skipping those already done if overwrite=False."""
     from breads.jwst_reduction.reduction_utils import find_files_to_process
 
@@ -1040,14 +1040,14 @@ def _iter_files_to_fit(uncaldir, targetname, list_bands, bkg_sub, skip_4, overwr
         raise ValueError("No FLAT_PATH specified to save the fringe flat")
 
     stage_dir = 'stage1_sub_bkg' if bkg_sub else 'stage1'
-    for band in list_bands:
-        input_path = os.path.join(uncaldir, targetname, band, stage_dir)
-        save_path = os.path.join(save_root, band)
+    for combined_channel_band in list_bands:
+        input_path = os.path.join(uncaldir, targetname, combined_channel_band, stage_dir)
+        save_path = os.path.join(save_root, combined_channel_band)
         os.makedirs(save_path, exist_ok=True)
 
-        first_band_fitted = not (band[1] == '4' and skip_4)
-        if not first_band_fitted:
-            print(f'Band {band}: skipping channel 4 fringe estimation')
+        channel_band_left_fitted = not (combined_channel_band[1] == '4' and skip_4)
+        if not channel_band_left_fitted:
+            print(f'Band {combined_channel_band}: skipping channel 4 fringe estimation')
 
         for file in find_files_to_process(input_path, filetype='rate.fits'):
             filename = os.path.basename(file)
@@ -1055,7 +1055,7 @@ def _iter_files_to_fit(uncaldir, targetname, list_bands, bkg_sub, skip_4, overwr
             if os.path.exists(save_filename) and not overwrite:
                 print(f"Flat for {filename} already created, skipping")
                 continue
-            yield band, os.path.join(input_path, file), save_filename, first_band_fitted
+            yield combined_channel_band, os.path.join(input_path, file), save_filename, channel_band_left_fitted
 
 
 def _column_slices(arrays, col_id):
@@ -1076,7 +1076,7 @@ def _collect_results(pending, active_jobs, pbar, overwrite, keep_job=None):
     while pending and must_wait():
         done, _ = wait(pending, return_when=FIRST_COMPLETED)
         for fut in done:
-            job, band = pending.pop(fut)
+            job, channel_band = pending.pop(fut)
             try:
                 col_id, f, c, bp_col, fit_info, tb = fut.result()
             except BrokenProcessPool as e:
@@ -1086,7 +1086,7 @@ def _collect_results(pending, active_jobs, pbar, overwrite, keep_job=None):
                 ) from e
             if tb is not None:
                 tqdm.write(f"[{os.path.basename(job.save_filename)}] error on column {col_id} "
-                           f"(band {band}):\n{tb}")
+                           f"(band {channel_band}):\n{tb}")
             job.add(col_id, f, c, bp_col, fit_info)
             pbar.update(1)
 
@@ -1106,7 +1106,7 @@ def get_flat_parallelized(uncaldir, targetname, list_bands=None, bkg_sub=False,
                            n_procs=None, chunksize=None, start_method='spawn'):
     """Estimates the fringe flat of each *rate.fits file by fitting a
     Fabry-Perot model column by column, in parallel, and writes it to
-    $FLAT_PATH/<band>/<...>_fit_flat.fits.
+    $FLAT_PATH/<combined_channel_band>/<...>_fit_flat.fits.
 
     Parameters
     ----------
@@ -1133,7 +1133,7 @@ def get_flat_parallelized(uncaldir, targetname, list_bands=None, bkg_sub=False,
 
     n_procs = n_procs or _available_cpus()
     # Never more than ~1000 columns in flight (2 files at most).
-    n_procs = max(1, min(n_procs, len(FIRST_BAND_COLUMNS) + len(SECOND_BAND_COLUMNS)))
+    n_procs = max(1, min(n_procs, len(LEFT_COLUMNS) + len(RIGHT_COLUMNS)))
 
     with contextlib.ExitStack() as stack:
         if n_procs == 1:
@@ -1149,19 +1149,19 @@ def get_flat_parallelized(uncaldir, targetname, list_bands=None, bkg_sub=False,
             )
         pbar = stack.enter_context(tqdm(total=0, desc="Fitting columns", unit="col"))
 
-        pending = {}       # future -> (job, band)
+        pending = {}       # future -> (job, channel_band)
         active_jobs = []
         try:
-            for band, rate_file, save_filename, first_band_fitted in _iter_files_to_fit(
+            for combined_channel_band, rate_file, save_filename, channel_band_left_fitted in _iter_files_to_fit(
                     uncaldir, targetname, list_bands, bkg_sub, skip_4, overwrite):
-                pbar.set_description(f"Band {band} - {os.path.basename(rate_file)}")
+                pbar.set_description(f"Band {combined_channel_band} - {os.path.basename(rate_file)}")
 
                 # Loading + WCS in the parent: happens while the workers are
                 # still fitting the previous file.
                 data, DQ, err, _, beta, wave, prim_header = _load_rate_file(rate_file)
-                first_band, second_band = _split_band(band)
+                channel_band_left, channel_band_right = _split_band(combined_channel_band)
                 job = _FileJob(save_filename, prim_header, data.shape,
-                               first_band, second_band, first_band_fitted)
+                               channel_band_left, channel_band_right, channel_band_left_fitted)
                 active_jobs.append(job)
 
                 tasks = list(job.tasks())
@@ -1170,10 +1170,10 @@ def get_flat_parallelized(uncaldir, targetname, list_bands=None, bkg_sub=False,
                 pbar.refresh()
 
                 arrays = (data, wave, beta, err, DQ)
-                for sub_band, col_id in tasks:
-                    fut = executor.submit(_fit_column_task, sub_band, col_id,
+                for channel_band, col_id in tasks:
+                    fut = executor.submit(_fit_column_task, channel_band, col_id,
                                           _column_slices(arrays, col_id))
-                    pending[fut] = (job, sub_band)
+                    pending[fut] = (job, channel_band)
                 del data, DQ, err, beta, wave, arrays
 
                 # At most two files in flight: finish the previous one before

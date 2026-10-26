@@ -37,7 +37,7 @@ class JWSTMiri_multiple_cals(JWSTMiri_cal):
         """
         self.breads_header = dataobj_list[0].breads_header
         #self.coords = dataobj_list[0].coords
-        self.channel = dataobj_list[0].channel
+        self.combined_channel = dataobj_list[0].combined_channel
         self.R = dataobj_list[0].R
         #self.pixelscale = dataobj_list[0].pixelscale
         #self.data_unit = dataobj_list[0].data_unit

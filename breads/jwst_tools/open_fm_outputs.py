@@ -19,8 +19,8 @@ def open_fm_outputs_miri(uncaldir, targetname, n_nodes, list_bands=None, compani
     if list_bands is None:
         list_bands = ['1A', '1B', '1C', '2A', '2B', '2C', '3A', '3B', '3C', '4A', '4B', '4C']
 
-    for band in list_bands:
-        fm_outputs_path = os.path.join(uncaldir, targetname, f'fm_outputs_{n_nodes}_nodes', band)
+    for channel_band in list_bands:
+        fm_outputs_path = os.path.join(uncaldir, targetname, f'fm_outputs_{n_nodes}_nodes', channel_band)
         list_fm_outputs = sort_by_dither_number(os.listdir(fm_outputs_path))
         flux_dithers_array = []
         noise_dithers_array = []
@@ -43,8 +43,8 @@ def open_fm_outputs_miri(uncaldir, targetname, n_nodes, list_bands=None, compani
 
         flux_combined, flux_error_combined = combined_outputs(flux_dithers_array, noise_dithers_array, weighted=True)
 
-        plot_snr_maps(targetname, band, flux_dithers_array, noise_dithers_array, flux_combined, flux_error_combined, decs, ras, rvs, companion_offsets=companion_offsets, savefig=True)
-        plot_chi2_maps(targetname, band, rchi2_dithers_array, decs, ras, rvs, companion_offsets=companion_offsets)
+        plot_snr_maps(targetname, channel_band, flux_dithers_array, noise_dithers_array, flux_combined, flux_error_combined, decs, ras, rvs, companion_offsets=companion_offsets, savefig=True)
+        plot_chi2_maps(targetname, channel_band, rchi2_dithers_array, decs, ras, rvs, companion_offsets=companion_offsets)
 
 def open_fm_outputs_nirspec(uncaldir, targetname, n_nodes, companion_offsets=None):
     fm_outputs_path = os.path.join(uncaldir, targetname, f'fm_outputs_{n_nodes}_nodes')
@@ -170,7 +170,7 @@ def annotate_plot_star_and_companions(ax, companion_offsets=None, mark_star=True
 
 
 
-def plot_snr_maps(targetname, band, flux_p, flux_error, flux_combined, flux_error_combined, decs, ras, rvs,
+def plot_snr_maps(targetname, channel_band, flux_p, flux_error, flux_combined, flux_error_combined, decs, ras, rvs,
                   vmin=-2, vmax = 7,
                   companion_offsets=None, savefig=True, mark_star=True):
 
@@ -181,7 +181,7 @@ def plot_snr_maps(targetname, band, flux_p, flux_error, flux_combined, flux_erro
         nrows = math.ceil(n_dithers / ncols)
 
         fig, axes = plt.subplots(nrows, ncols, figsize=(10, 8))
-        fig.suptitle(f"{targetname} SNR maps for {band}, \n rv = {rv} km/s")
+        fig.suptitle(f"{targetname} SNR maps for {channel_band}, \n rv = {rv} km/s")
 
         # Flatten axes to 1D for easy iteration
         axes = np.atleast_1d(axes).ravel()
@@ -228,7 +228,7 @@ def plot_snr_maps(targetname, band, flux_p, flux_error, flux_combined, flux_erro
         fig, ax = plt.subplots()
         plt.xlabel('Delta RA (")')
         plt.ylabel('Delta DEC (")')
-        plt.title(f"{targetname} combined SNR map on {band}, \n rv = {rv} km/s")
+        plt.title(f"{targetname} combined SNR map on {channel_band}, \n rv = {rv} km/s")
         plt.gca().invert_xaxis()
         snr_combined = (flux_combined[k] / flux_error_combined[k]).T
         img = plt.pcolormesh(ras, decs, snr_combined, cmap='viridis')
@@ -252,11 +252,11 @@ def plot_snr_maps(targetname, band, flux_p, flux_error, flux_combined, flux_erro
         plt.show()
 
 
-def plot_chi2_maps(targetname, band, rchi2, decs, ras, rvs, companion_offsets=None, mark_star=True):
+def plot_chi2_maps(targetname, channel_band, rchi2, decs, ras, rvs, companion_offsets=None, mark_star=True):
 
     for k, rv in enumerate(rvs):
         fig, ax = plt.subplots(2, 2, figsize=(10, 8))  # optional figsize
-        fig.suptitle(f'{targetname} Noise scaling factor maps for {band} \n fringe flat = extended flat ')
+        fig.suptitle(f'{targetname} Noise scaling factor maps for {channel_band} \n fringe flat = extended flat ')
 
         # Plot the scaling maps
         for i in range(2):
@@ -303,9 +303,9 @@ def plot_combined_channel(uncaldir, targetname, n_nodes, list_channels=None, com
         flux_dithers_array = []
         noise_dithers_array = []
         rchi2_dithers_array = []
-        for b in list_bands:
-            band = channel + b
-            fm_outputs_path = os.path.join(uncaldir, targetname, f'fm_outputs_{n_nodes}_nodes', band)
+        for sub_band in list_bands:
+            channel_band = channel + sub_band
+            fm_outputs_path = os.path.join(uncaldir, targetname, f'fm_outputs_{n_nodes}_nodes', channel_band)
             list_fm_outputs = sort_by_dither_number(os.listdir(fm_outputs_path))
             for fm_output in list_fm_outputs:
                 if h5py.is_hdf5(os.path.join(fm_outputs_path, fm_output)):
@@ -345,11 +345,11 @@ def plot_combined_hf_starspectrum(uncaldir, targetname, n_nodes, list_bands=None
     if list_bands is None:
         list_bands = ['1A', '1B', '1C', '2A', '2B', '2C', '3A', '3B', '3C', '4A', '4B', '4C']
 
-    for band in list_bands:
-        utils_outputs_path = os.path.join(uncaldir, targetname, f'utils_fm_{n_nodes}_nodes', band)
+    for channel_band in list_bands:
+        utils_outputs_path = os.path.join(uncaldir, targetname, f'utils_fm_{n_nodes}_nodes', channel_band)
         list_utils_outputs = find_files_to_process(utils_outputs_path, filetype='starspec_contnorm.fits')
         print(list_utils_outputs)
-        plt.title(f"{targetname} combined HF star spectrum on band {band}")
+        plt.title(f"{targetname} combined HF star spectrum on band {channel_band}")
         plt.xlabel('Wavelength (microns)')
         plt.ylabel('Continuum normalized flux')
         for utils in list_utils_outputs:
@@ -559,14 +559,14 @@ def save_contrast_curves_fits(results, targetname, output_path=None):
 
     hdus = [fits.PrimaryHDU()]
 
-    for band, band_results in results.items():
-        for photfilter_name, curves in band_results.items():
+    for channel_band, channel_band_results in results.items():
+        for photfilter_name, curves in channel_band_results.items():
             col_sep = fits.Column(name="sep", format="D", array=curves["bin_centers"])
             col_contrast = fits.Column(name="contrast_med", format="D", array=curves["contrast_med"])
             hdu = fits.BinTableHDU.from_columns([col_sep, col_contrast])
-            hdu.header["BAND"] = (band, "MRS band used for the noise measurement")
+            hdu.header["BAND"] = (channel_band, "MRS band used for the noise measurement")
             hdu.header["FILTER"] = (photfilter_name, "Photometric filter the contrast is renormalized to")
-            hdu.header["EXTNAME"] = f"{band}_{photfilter_name}"
+            hdu.header["EXTNAME"] = f"{channel_band}_{photfilter_name}"
             hdus.append(hdu)
 
     fits.HDUList(hdus).writeto(output_path, overwrite=True)
@@ -574,7 +574,7 @@ def save_contrast_curves_fits(results, targetname, output_path=None):
     return output_path
 
 
-def load_contrast_curve_fits(fits_path, band, photfilter_name):
+def load_contrast_curve_fits(fits_path, channel_band, photfilter_name):
     """
     Load the median contrast curve for a given band/filter combination,
     from the file produced by save_contrast_curves_fits.
@@ -583,11 +583,11 @@ def load_contrast_curve_fits(fits_path, band, photfilter_name):
     """
     with fits.open(fits_path) as hdul:
         for hdu in hdul[1:]:
-            if hdu.header.get("BAND") == band and hdu.header.get("FILTER") == photfilter_name:
+            if hdu.header.get("BAND") == channel_band and hdu.header.get("FILTER") == photfilter_name:
                 return hdu.data["sep"], hdu.data["contrast_med"]
 
     raise ValueError(
-        f"No curve found for band='{band}', filter='{photfilter_name}' in {fits_path}. "
+        f"No curve found for band='{channel_band}', filter='{photfilter_name}' in {fits_path}. "
         f"Available extensions: {[hdu.header.get('EXTNAME') for hdu in fits.open(fits_path)[1:]]}"
     )
 
@@ -629,8 +629,8 @@ def plot_contrast_curves(uncaldir, targetname, list_nodes, flux_star, grid_wvs, 
         for photfilter_name in flux_star.keys()
     }
 
-    for n_nodes, band in zip(list_nodes, list_bands):
-        fm_outputs_path = os.path.join(uncaldir, targetname, f'fm_outputs_{n_nodes}_nodes', band)
+    for n_nodes, channel_band in zip(list_nodes, list_bands):
+        fm_outputs_path = os.path.join(uncaldir, targetname, f'fm_outputs_{n_nodes}_nodes', channel_band)
         list_fm_outputs = sort_by_dither_number(os.listdir(fm_outputs_path))
 
         flux_dithers_array = []
@@ -654,7 +654,7 @@ def plot_contrast_curves(uncaldir, targetname, list_nodes, flux_star, grid_wvs, 
             rchi2_dithers_array.append(rchi2)
 
         if ras is None:
-            raise RuntimeError(f"No valid fm_output file found for band {band}.")
+            raise RuntimeError(f"No valid fm_output file found for band {channel_band}.")
 
         ras_grid, decs_grid = np.meshgrid(ras, decs)
         flux_dithers_array = np.array(flux_dithers_array)
@@ -665,7 +665,7 @@ def plot_contrast_curves(uncaldir, targetname, list_nodes, flux_star, grid_wvs, 
         )
 
         sep_grid = np.sqrt(ras_grid ** 2 + decs_grid ** 2)
-        results[band] = {}
+        results[channel_band] = {}
 
         for photfilter_name in flux_star.keys():
             renorm_factor = renorm_factors[photfilter_name]
@@ -694,7 +694,7 @@ def plot_contrast_curves(uncaldir, targetname, list_nodes, flux_star, grid_wvs, 
                     contrast_med[i] = np.nanmedian(contrast_1d[valid])
 
 
-            results[band][photfilter_name] = {
+            results[channel_band][photfilter_name] = {
                 "sep_1d": sep_1d,
                 "contrast_1d": contrast_1d,
                 "bin_centers": bin_centers,
@@ -703,7 +703,7 @@ def plot_contrast_curves(uncaldir, targetname, list_nodes, flux_star, grid_wvs, 
 
             if plot:
                 plt.figure()
-                plt.title(f"5-$\\sigma$ Sensitivity 1D ({band} $\\to$ {photfilter_name})")
+                plt.title(f"5-$\\sigma$ Sensitivity 1D ({channel_band} $\\to$ {photfilter_name})")
                 plt.scatter(sep_1d, contrast_1d, s=5, alpha=0.5)
                 plt.plot(bin_centers, contrast_med, color='red')
                 plt.yscale("log")

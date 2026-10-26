@@ -48,3 +48,9 @@ aperture_dict = {"1A":0.2, "1B":0.2, "1C":0.2, "2A":0.3, "2B":0.3, "2C":0.3, "3A
 fov_dict = {"1A":0.6, "1B":0.6, "1C":0.6, "2A":0.9, "2B":0.9, "2C":0.9, "3A":1.2, "3B":1.2, "3C":1.2}
 
 
+def sub_band_from_name(sub_band_name):
+    """Convert the BAND header value of a MIRI/MRS file to its sub-band letter: 'SHORT' -> 'A', 'MEDIUM' -> 'B', 'LONG' -> 'C'."""
+    sub_bands = {'SHORT': 'A', 'MEDIUM': 'B', 'LONG': 'C'}
+    if sub_band_name not in sub_bands:
+        raise ValueError(f"Sub-band {sub_band_name}  is not recognized, must be SHORT, MEDIUM or LONG")
+    return sub_bands[sub_band_name]

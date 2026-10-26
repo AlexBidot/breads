@@ -59,6 +59,7 @@ from breads.jwst_tools.fitpsf import fitpsf,project_psf_model
 from breads.jwst_tools.spectra import combine_spectrum,combine_spectrum_1dspline
 import breads.jwst_tools.default_nirspec as default
 import breads.jwst_tools.default_miri as default_miri
+from breads.jwst_tools.default_miri import sub_band_from_name
 
 from breads.jwst_tools.build_cube import build_cube
 from breads.jwst_tools.splines import evaluate_3dspline_pointcloud
@@ -1763,17 +1764,8 @@ def compute_3dsplines_miri(cal_files, channel, utils_dir, targetname, combined_c
                       centroid_per_frame=True, overwrite=False, ra_dec_point_sources=None,aper_rad =None,
                       stamp_size = (0.5, 0.5)):
 
-    band = fits.getheader(cal_files[0])['BAND']
-
-    if band == 'SHORT':
-        band = 'A'
-    elif band == 'MEDIUM':
-        band = 'B'
-    elif band == 'LONG':
-        band = 'C'
-    else:
-        raise ValueError(f"band {band} is not recognized, must be SHORT, MEDIUM, LONG")
-    channel_band = channel + band
+    sub_band = sub_band_from_name(fits.getheader(cal_files[0])['BAND'])
+    channel_band = channel + sub_band
 
     if wv_nodes is None:
         wv_nodes= default_miri.wv_nodes_3D_dict[channel_band]
@@ -2053,7 +2045,7 @@ def cube_extraction(cal_files, utils_dir, out_dir, combined_contnorm_spec_filena
 
     return flux_cube, fluxerr_cube, x_grid, y_grid, wv_sampling
 
-def cube_extraction_miri(cal_files, channel_reduction, band, utils_dir, out_dir, combined_contnorm_spec_filename, coords_filename_filter,
+def cube_extraction_miri(cal_files, channel, sub_band, utils_dir, out_dir, combined_contnorm_spec_filename, coords_filename_filter,
                     mode="raw", suffix=None, contnorm_suffix=None,
                     x_vec=None, y_vec=None, wv_sampling=None,
                     recenter=False,
@@ -2083,7 +2075,7 @@ def cube_extraction_miri(cal_files, channel_reduction, band, utils_dir, out_dir,
     if y_vec is None:
         y_vec = np.arange(-2, 2, 0.05)
 
-    channel_band = channel_reduction + band
+    channel_band = channel + sub_band
     if wv_sampling is None:
         wv_sampling = default_miri.wv_sampling_dict[channel_band]
     if aper_radius is None:
@@ -2115,7 +2107,7 @@ def cube_extraction_miri(cal_files, channel_reduction, band, utils_dir, out_dir,
     else:
         dataobj_list = []
         for filename in cal_files:
-            dataobj = JWSTMiri_cal(filename, channel_reduction=channel_reduction, utils_dir=utils_dir)
+            dataobj = JWSTMiri_cal(filename, channel_reduction=channel, utils_dir=utils_dir)
 
             if contnorm_suffix is not None:
                 dataobj.default_filenames["compute_starspectrum_contnorm"] = dataobj.default_filenames[
@@ -3277,17 +3269,8 @@ def compute_snr_grid_miri(cal_files, channel, utils_dir, out_dir,
     if suffix is None:
         suffix = "snr"
 
-    band = fits.getheader(cal_files[0])['BAND']
-
-    if band == 'SHORT':
-        band = 'A'
-    elif band == 'MEDIUM':
-        band = 'B'
-    elif band == 'LONG':
-        band = 'C'
-    else:
-        raise ValueError(f"band {band} is not recognized, must be SHORT, MEDIUM, LONG")
-    channel_band = channel + band
+    sub_band = sub_band_from_name(fits.getheader(cal_files[0])['BAND'])
+    channel_band = channel + sub_band
 
 
 
@@ -3805,7 +3788,6 @@ def sort_by_target_name(input_dir, filetype='uncal.fits'):
 
     return dict(targname_groups)
 
-
 def retrieve_mrs_data(uncaldir, target_name, combined_channel_band):
     """Function to select the stage 2 MRS files for a desired band and target name for the default output path."""
     cal_dir = os.path.join(uncaldir, target_name, combined_channel_band, 'stage2')
@@ -3814,18 +3796,9 @@ def retrieve_mrs_data(uncaldir, target_name, combined_channel_band):
     return filelist
 
 
-def select_miri_output_directory(uncal_path, target_name, channel, band):
+def select_miri_output_directory(uncal_path, target_name, combined_channel, sub_band_name):
     """Short function to select the right MIRI output directory"""
-
-    if band == 'SHORT':
-        band_alias = 'A'
-    elif band == 'MEDIUM':
-        band_alias = 'B'
-    elif band == 'LONG':
-        band_alias = 'C'
-    else:
-        raise ValueError(f"Band {band} is not supported for stage 1 forward modeling")
-    return os.path.join(uncal_path, target_name, channel + band_alias, 'stage1')
+    return os.path.join(uncal_path, target_name, combined_channel + sub_band_from_name(sub_band_name), 'stage1')
 
 
 def run_stage1_miri(uncal_path, list_bands=None, overwrite=False, maximum_cores="1", skip_dark=False, save_rateints=False,
@@ -3849,17 +3822,17 @@ def run_stage1_miri(uncal_path, list_bands=None, overwrite=False, maximum_cores=
         print(f"Processing uncal data of {target_name}")
         uncal_files = dict_files_by_target_names[target_name]
 
-        for band in list_bands:
-            mkdir_miri_files(os.path.join(uncal_path, target_name, band, 'stage1'))
+        for combined_channel_band in list_bands:
+            mkdir_miri_files(os.path.join(uncal_path, target_name, combined_channel_band, 'stage1'))
 
         rate_files = []
 
         for i, file in enumerate(uncal_files):
             print(f"Processing file {i + 1} of {len(uncal_files)}.")
             hdu_uncal = fits.open(file)
-            band_uncal = hdu_uncal[0].header['BAND']
-            channel_uncal = hdu_uncal[0].header['CHANNEL']
-            output_dir = select_miri_output_directory(uncal_path, target_name, channel_uncal, band_uncal)
+            sub_band_name = hdu_uncal[0].header['BAND']
+            combined_channel = hdu_uncal[0].header['CHANNEL']
+            output_dir = select_miri_output_directory(uncal_path, target_name, combined_channel, sub_band_name)
 
             new_name = os.path.basename(file).replace('uncal.fits', 'rate.fits')
             out_name = os.path.join(output_dir, new_name)
@@ -3911,12 +3884,12 @@ def run_bkg_subtraction(uncal_path, target_name, list_bands=None, overwrite=Fals
     if list_bands is None:
         list_bands = ['12A', '12B', '12C', '34A', '34B', '34C']
 
-    for band in list_bands:
-        output_dir = os.path.join(uncal_path, target_name, band, 'stage1_sub_bkg')
+    for combined_channel_band in list_bands:
+        output_dir = os.path.join(uncal_path, target_name, combined_channel_band, 'stage1_sub_bkg')
         mkdir_miri_files(output_dir)
-        background_outputdir = os.path.join(uncal_path, target_name, band, 'master_bkg')
+        background_outputdir = os.path.join(uncal_path, target_name, combined_channel_band, 'master_bkg')
         mkdir_miri_files(background_outputdir)
-        rate_files_all = find_files_to_process(os.path.join(uncal_path, target_name, band, 'stage1'), filetype='rate.fits')
+        rate_files_all = find_files_to_process(os.path.join(uncal_path, target_name, combined_channel_band, 'stage1'), filetype='rate.fits')
 
         bkg_files = [f for f in rate_files_all if 'BACKGROUND' in fits.getheader(f)['OBSLABEL']
                      or 'BKG' in fits.getheader(f)['OBSLABEL']]
@@ -3928,7 +3901,7 @@ def run_bkg_subtraction(uncal_path, target_name, list_bands=None, overwrite=Fals
         bkg_master = np.nanmedian(bkg_master, axis=0)
         plt.imshow(bkg_master, origin='lower')
         plt.show()
-        fits.writeto(os.path.join(background_outputdir,f"background_master_{band}.fits"), bkg_master, overwrite=overwrite)
+        fits.writeto(os.path.join(background_outputdir,f"background_master_{combined_channel_band}.fits"), bkg_master, overwrite=overwrite)
 
         for fid, rate_file in enumerate(rate_files):
             out_name = os.path.join(output_dir, os.path.basename(rate_file))
@@ -3945,19 +3918,19 @@ def flat_fringing_stage1(uncal_path, target_name, list_bands=None, flat_path=Non
     if list_bands is None:
         list_bands = ['12A', '12B', '12C', '34A', '34B', '34C']
 
-    for band in list_bands:
-        mkdir_miri_files(os.path.join(uncal_path, target_name, band, 'stage1_flat'))
+    for combined_channel_band in list_bands:
+        mkdir_miri_files(os.path.join(uncal_path, target_name, combined_channel_band, 'stage1_flat'))
 
     # Start a timer to keep track of runtime
     time0 = time.perf_counter()
     print(time0)
 
-    for band in list_bands:
+    for combined_channel_band in list_bands:
         if bkg_sub:
-            rate_files = find_files_to_process(os.path.join(uncal_path, target_name, band, 'stage1_sub_bkg'), filetype='rate.fits')
+            rate_files = find_files_to_process(os.path.join(uncal_path, target_name, combined_channel_band, 'stage1_sub_bkg'), filetype='rate.fits')
         else:
-            rate_files = find_files_to_process(os.path.join(uncal_path, target_name, band, 'stage1'), filetype='rate.fits')
-        output_dir = os.path.join(uncal_path, target_name, band, 'stage1_flat')
+            rate_files = find_files_to_process(os.path.join(uncal_path, target_name, combined_channel_band, 'stage1'), filetype='rate.fits')
+        output_dir = os.path.join(uncal_path, target_name, combined_channel_band, 'stage1_flat')
         rate_filtered_files = []
         for fid, rate_file in enumerate(rate_files):
             print(fid, rate_file)
@@ -3971,7 +3944,7 @@ def flat_fringing_stage1(uncal_path, target_name, list_bands=None, flat_path=Non
 
             hdr = fits.getheader(rate_file)
             detector = hdr['DETECTOR']
-            band = hdr['BAND']
+            sub_band = sub_band_from_name(hdr['BAND'])
 
             if flat_path is None:
                 flat_path_rate = os.getenv("FLAT_PATH")
@@ -3982,27 +3955,13 @@ def flat_fringing_stage1(uncal_path, target_name, list_bands=None, flat_path=Non
 
             print("Searching fringes flat files in:", flat_path_rate)
 
+            # The best flat is selected on the brightest column of the channel on the right half of the detector
             if detector == 'MIRIFUSHORT':
-                if band == 'SHORT':
-                    flat_path_rate = os.path.join(flat_path_rate, '12A')
-                elif band == 'MEDIUM':
-                    flat_path_rate = os.path.join(flat_path_rate, '12B')
-                elif band == 'LONG':
-                    flat_path_rate = os.path.join(flat_path_rate, '12C')
-                else:
-                    raise ValueError(f'Unsupported band for file: {rate_file} must be either SHORT, MEDIUM or LONG')
-                channel = 'CH2'
-
+                flat_path_rate = os.path.join(flat_path_rate, '12' + sub_band)
+                channel = '2'
             else:
-                if band == 'SHORT':
-                    flat_path_rate = os.path.join(flat_path_rate, '34A')
-                elif band == 'MEDIUM':
-                    flat_path_rate = os.path.join(flat_path_rate, '34B')
-                elif band == 'LONG':
-                    flat_path_rate = os.path.join(flat_path_rate, '34C')
-                else:
-                    raise ValueError(f'Unsupported band for file: {rate_file} must be either SHORT, MEDIUM or LONG')
-                channel = 'CH3'
+                flat_path_rate = os.path.join(flat_path_rate, '34' + sub_band)
+                channel = '3'
 
             best_flat, flat_name, std_min = best_flat_selection(rate_file, flat_path_rate, channel,
                                                                 flat_extended=flat_extended)
@@ -4030,8 +3989,8 @@ def flat_pixel_stage1(uncal_path, target_name, list_bands=None, pixel_flat_path=
     if pixel_flat_path is None:
         pixel_flat_path = os.getenv("PIXEL_FLAT_PATH")
 
-    for band in list_bands:
-        filedir = os.path.join(uncal_path, target_name, band, 'stage1_flat')
+    for combined_channel_band in list_bands:
+        filedir = os.path.join(uncal_path, target_name, combined_channel_band, 'stage1_flat')
         rate_files = find_files_to_process(filedir, filetype='rate.fits')
 
         for fid, rate_file in enumerate(rate_files):
@@ -4046,7 +4005,7 @@ def flat_pixel_stage1(uncal_path, target_name, list_bands=None, pixel_flat_path=
                 print(f"Pixel flat already applied to file {rate_file};\n\tskipping {rate_file}.")
                 continue
 
-            pixel_flat_band_path = os.path.join(pixel_flat_path, band)
+            pixel_flat_band_path = os.path.join(pixel_flat_path, combined_channel_band)
             print("Searching pixel flat files in:", pixel_flat_path)
 
             pixel_flat_name = os.listdir(pixel_flat_band_path)[0]
@@ -4073,23 +4032,23 @@ def run_stage2_miri(uncal_path, target_name, list_bands=None, custom_flatted=Tru
     if list_bands is None:
         list_bands = ['12A', '12B', '12C', '34A', '34B', '34C']
 
-    for band in list_bands:
-        mkdir_miri_files(os.path.join(uncal_path, target_name, band, 'stage2'))
+    for combined_channel_band in list_bands:
+        mkdir_miri_files(os.path.join(uncal_path, target_name, combined_channel_band, 'stage2'))
 
     time0 = time.perf_counter()
     print(time0)
 
     cal_files = []
-    for band in list_bands:
+    for combined_channel_band in list_bands:
         if custom_flatted:
-            rate_file_band_path = os.path.join(uncal_path, target_name, band, 'stage1_flat')
+            rate_file_band_path = os.path.join(uncal_path, target_name, combined_channel_band, 'stage1_flat')
             print(f"Processing the custom flatted rate files in {rate_file_band_path} for stage 2.")
         else:
             if custom_bkg_sub:
-                rate_file_band_path = os.path.join(uncal_path, target_name, band, 'stage1_sub_bkg')
+                rate_file_band_path = os.path.join(uncal_path, target_name, combined_channel_band, 'stage1_sub_bkg')
                 print(f"Processing the background subtracted rate files in {rate_file_band_path} for stage 2.")
             else:
-                rate_file_band_path = os.path.join(uncal_path, target_name, band, 'stage1')
+                rate_file_band_path = os.path.join(uncal_path, target_name, combined_channel_band, 'stage1')
                 print(f"Processing the rate files in {rate_file_band_path} for stage 2.")
 
         rate_files = find_files_to_process(rate_file_band_path, filetype='rate.fits')
@@ -4098,7 +4057,7 @@ def run_stage2_miri(uncal_path, target_name, list_bands=None, custom_flatted=Tru
             print(fid, rate_file)
 
             # Setting up steps and running the Spec2 portion of the pipeline.
-            outputdir = os.path.join(uncal_path, target_name, band, 'stage2')
+            outputdir = os.path.join(uncal_path, target_name, combined_channel_band, 'stage2')
             out_name = os.path.join(outputdir, os.path.basename(rate_file).replace('rate.fits', 'cal.fits'))
             cal_files.append(out_name)
             if os.path.exists(out_name) and not overwrite:
@@ -4143,13 +4102,13 @@ def run_stage3_miri(uncal_path, target_name, list_bands=None, overwrite=False, v
     """
     if list_bands is None:
         list_bands = ['12A', '12B', '12C', '34A', '34B', '34C']
-    for band in list_bands:
-        outputdir = mkdir_miri_files(os.path.join(uncal_path, target_name, band, 'stage3'))
-        if os.path.exists(os.path.join(outputdir, f'Level3_ch{band[0]}-short_s3d.fits')) and overwrite is False:
-            print(f"Output file Level3_ch{band[0]}-short_s3d.fits already exists;\n\tskipping.")
+    for combined_channel_band in list_bands:
+        outputdir = mkdir_miri_files(os.path.join(uncal_path, target_name, combined_channel_band, 'stage3'))
+        if os.path.exists(os.path.join(outputdir, f'Level3_ch{combined_channel_band[0]}-short_s3d.fits')) and overwrite is False:
+            print(f"Output file Level3_ch{combined_channel_band[0]}-short_s3d.fits already exists;\n\tskipping.")
             continue
 
-        inputdir = os.path.join(uncal_path, target_name, band, 'stage2')
+        inputdir = os.path.join(uncal_path, target_name, combined_channel_band, 'stage2')
 
         # Start a timer to keep track of runtime
         time0 = time.perf_counter()
@@ -4203,27 +4162,27 @@ def writel3asn(files, asnfile, prodname, **kwargs):
 
 
 def sort_calfiles(files):
-    channel = []
-    band = []
+    combined_channel = []
+    sub_band_name = []
 
     for file in files:
         hdr = (fits.open(file))[0].header
-        channel.append(hdr['CHANNEL'])
-        band.append(hdr['BAND'])
-    channel = np.array(channel)
-    band = np.array(band)
+        combined_channel.append(hdr['CHANNEL'])
+        sub_band_name.append(hdr['BAND'])
+    combined_channel = np.array(combined_channel)
+    sub_band_name = np.array(sub_band_name)
 
-    indx = np.where((channel == '12') & (band == 'SHORT'))
+    indx = np.where((combined_channel == '12') & (sub_band_name == 'SHORT'))
     files12A = files[indx]
-    indx = np.where((channel == '12') & (band == 'MEDIUM'))
+    indx = np.where((combined_channel == '12') & (sub_band_name == 'MEDIUM'))
     files12B = files[indx]
-    indx = np.where((channel == '12') & (band == 'LONG'))
+    indx = np.where((combined_channel == '12') & (sub_band_name == 'LONG'))
     files12C = files[indx]
-    indx = np.where((channel == '34') & (band == 'SHORT'))
+    indx = np.where((combined_channel == '34') & (sub_band_name == 'SHORT'))
     files34A = files[indx]
-    indx = np.where((channel == '34') & (band == 'MEDIUM'))
+    indx = np.where((combined_channel == '34') & (sub_band_name == 'MEDIUM'))
     files34B = files[indx]
-    indx = np.where((channel == '34') & (band == 'LONG'))
+    indx = np.where((combined_channel == '34') & (sub_band_name == 'LONG'))
     files34C = files[indx]
 
     return files12A, files12B, files12C, files34A, files34B, files34C
@@ -4272,7 +4231,8 @@ def best_flat_selection(cal_file, flat_dir, channel, flat_extended=False, save_p
     ----------
     cal_file
     flat_dir
-    channel
+    channel : str
+        MRS channel ('1', '2', '3' or '4') used to find the brightest column
     flat_extended : bool
         use the FLAT_EXTENDED extension, instead of regular FLAT?
     save_png : bool
@@ -4286,9 +4246,9 @@ def best_flat_selection(cal_file, flat_dir, channel, flat_extended=False, save_p
     pattern_type = hdr['PATTTYPE']
     dither_direction = hdr['DITHDIRC']
     dither_numero = hdr['PATT_NUM']
-    band = hdr['BAND']
+    sub_band_name = hdr['BAND']
 
-    print(f"Band: {band}")
+    print(f"Band: {sub_band_name}")
 
     filenames = os.listdir(flat_dir)
 
@@ -4299,7 +4259,7 @@ def best_flat_selection(cal_file, flat_dir, channel, flat_extended=False, save_p
     print(f"Brightest column for Channel {channel}: {brightest_col}")
     if save_png:
         xlim = [450, 500]
-        plt.title(f"Best fringes flat pattern selection\nFor channel {channel} {band}, using brighest column: {brightest_col} ")
+        plt.title(f"Best fringes flat pattern selection\nFor channel {channel} {sub_band_name}, using brighest column: {brightest_col} ")
         plt.xlabel("Row index")
         plt.ylabel("Fringes transmission")
         plt.xlim(*xlim)
@@ -4324,7 +4284,7 @@ def best_flat_selection(cal_file, flat_dir, channel, flat_extended=False, save_p
                 flat = flat_hdu['FLAT'].data
 
             if hdr_flat['PATT_NUM'] == dither_numero and hdr_flat['PATTTYPE'] == pattern_type and hdr_flat[
-                'DITHDIRC'] == dither_direction and hdr_flat['BAND'] == band:
+                'DITHDIRC'] == dither_direction and hdr_flat['BAND'] == sub_band_name:
                 d_f = data[:, brightest_col] / flat[:, brightest_col]
                 d_f_hf = d_f - gaussian_filter(d_f, sigma=8)
                 fringe_residuals_std = np.nanstd(d_f_hf)
@@ -4368,13 +4328,13 @@ def column_median_max(mat):
     return col_index
 
 
-def column_median_max_channel(data, channel='CH1'):
-    if channel == 'CH1' or channel == 'CH4':
+def column_median_max_channel(data, channel='1'):
+    if channel == '1' or channel == '4':
         brightest_col = column_median_max(data[:, :500])
-    elif channel == 'CH2' or channel == 'CH3':
+    elif channel == '2' or channel == '3':
         brightest_col = column_median_max(data[:, 500:]) + 500
     else:
-        raise ValueError('Channel must be CH1, CH2, CH3 or CH4')
+        raise ValueError("Channel must be '1', '2', '3' or '4'")
 
     return brightest_col
 
@@ -4458,17 +4418,8 @@ def compute_normalized_stellar_spectrum_miri(cal_files, channel, utils_dir, comb
         if not os.path.exists(utils_dir):
             os.makedirs(utils_dir)
 
-        band = fits.getheader(cal_files[0])['BAND']
-
-        if band == 'SHORT':
-            band = 'A'
-        elif band == 'MEDIUM':
-            band = 'B'
-        elif band == 'LONG':
-            band = 'C'
-        else:
-            raise ValueError(f"band {band} is not recognized, must be SHORT, MEDIUM, LONG")
-        channel_band = channel + band
+        sub_band = sub_band_from_name(fits.getheader(cal_files[0])['BAND'])
+        channel_band = channel + sub_band
 
         if wv_nodes is None:
             wv_nodes = default_miri.nodes_dict[channel_band]
@@ -4648,17 +4599,8 @@ def recenter_coordinates_of_sequence_miri(cal_files, channel, utils_dir,combined
         else:
             _tmp_centroid = np.array(init_centroid)
 
-        band = fits.getheader(cal_files[0])['BAND']
-
-        if band == 'SHORT':
-            band = 'A'
-        elif band == 'MEDIUM':
-            band = 'B'
-        elif band == 'LONG':
-            band = 'C'
-        else:
-            raise ValueError(f"band {band} is not recognized, must be SHORT, MEDIUM, LONG")
-        channel_band = channel + band
+        sub_band = sub_band_from_name(fits.getheader(cal_files[0])['BAND'])
+        channel_band = channel + sub_band
 
         if wv_sampling is None:
             wv_sampling = default_miri.wv_sampling_dict[channel_band]
@@ -4779,17 +4721,8 @@ def recenter_coordinates_per_frame_miri(cal_files, channel, utils_dir,combined_c
     else:
         _tmp_centroid = np.array(init_centroid)
 
-    band = fits.getheader(cal_files[0])['BAND']
-
-    if band == 'SHORT':
-        band = 'A'
-    elif band == 'MEDIUM':
-        band = 'B'
-    elif band == 'LONG':
-        band = 'C'
-    else:
-        raise ValueError(f"band {band} is not recognized, must be SHORT, MEDIUM, LONG")
-    channel_band = channel + band
+    sub_band = sub_band_from_name(fits.getheader(cal_files[0])['BAND'])
+    channel_band = channel + sub_band
 
     if wv_sampling is None:
         wv_sampling = default_miri.wv_sampling_dict[channel_band]
