@@ -93,27 +93,28 @@ class JWSTMiri_cal(JWST_IFUs):
         self.combined_channel_band = self.combined_channel + self.sub_band
         self.channel_band = self.channel_reduction + self.sub_band
         self.breads_header['CHANNEL_BAND'] = self.channel_band
-        path_photom_crds = os.path.join(self.crds_dir, 'references/jwst/miri/')
-
-        fitsfile_crds = os.listdir(path_photom_crds)
-        for file_crds in fitsfile_crds:
-            if 'photom' in file_crds:
-                hdu_photom = fits.open(os.path.join(path_photom_crds, file_crds))
-                hdr_photom = hdu_photom[0].header
-                if hdr_photom['DETECTOR'] == 'MIRIMAGE':
-                    continue
-                if hdr_photom['CHANNEL'] == self.combined_channel and hdr_photom['BAND'] == self.sub_band_name:
-                    area2d_fits = file_crds
-                    print(f"Photom file selected: {file_crds}")
-                hdu_photom.close()
-
-        self.area2d = fits.open(os.path.join(path_photom_crds, area2d_fits))['PIXSIZ'].data #in steradian
+        photom_file = self._get_crds_reference()
+        if self.verbose:
+            print(f"Photom file selected: {photom_file}")
+        with fits.open(photom_file) as hdul_photom:
+            self.area2d = hdul_photom['PIXSIZ'].data  # in steradian
         if self.channel_reduction == '1' or self.channel_reduction == '4':
             self.pixelscale = np.sqrt(np.nanmedian(self.area2d[10:-10, 20:500]) * 4.25e10)  # steradian to arcsec
         else:
             self.pixelscale = np.sqrt(np.nanmedian(self.area2d[10:-10, 500:-20]) * 4.25e10)
 
         self._set_mrs_spectral_resolution()
+
+    def _get_crds_reference(self):
+        """Return the local path of the CRDS best reference file for photometric calibration.
+        """
+        import crds
+        import jwst.datamodels
+
+        with jwst.datamodels.open(self.filename) as model:
+            parameters = model.get_crds_parameters()
+        return crds.getreferences(parameters, reftypes=['photom'], context=self.priheader.get('CRDS_CTX'),
+                                  observatory='jwst')['photom']
 
     def _init_mask_channel(self, wv_ref):
         """Initializes a mask to hide channel data that is not useful for the desired reduction.
