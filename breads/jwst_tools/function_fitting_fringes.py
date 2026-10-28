@@ -129,10 +129,10 @@ def masking_infinite(wave, data, err, beta, col_id):
 
 def mask_DQ(dq):
     # JWST bit definitions (only those actually used are named here)
-    SATURATED = 2      # bit 1
+    DO_NOT_USE = 1     # bit 0
     DEAD = 1024        # bit 10
 
-    bad_flags = DEAD | SATURATED
+    bad_flags = DEAD | DO_NOT_USE
     return (dq & bad_flags) != 0
 
 
