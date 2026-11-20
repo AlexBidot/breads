@@ -733,7 +733,7 @@ class JWSTMiri_cal(JWST_IFUs):
         with pyfits.open(load_filename) as hdulist:
             row_mean = hdulist['MEAN_CORR'].data
 
-        self.data /= row_mean[:, None]
+        self.data /= row_mean[None, :]
 
         return row_mean
 

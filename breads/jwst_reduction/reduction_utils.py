@@ -3270,6 +3270,7 @@ def compute_snr_grid_miri(cal_files, channel, utils_dir, out_dir,
                     ra_dec_point_sources=None,fix_fitting_region_around_xy=None,
                     aper_radius=0.15,
                     mppool=None,
+                    odd_even_correction=False,
                     overwrite=False,
                     targetname=None,
                     use_stpsf=True, use_breadspsf=False,
@@ -3350,6 +3351,9 @@ def compute_snr_grid_miri(cal_files, channel, utils_dir, out_dir,
                                  ["compute_med_filt_badpix"],
                                  ["compute_coordinates_arrays", {'targname': targetname}]
                             ]
+
+        if odd_even_correction:
+            preproc_task_list.append(["compute_odd_even_correction", {"wv_nodes": wv_nodes}])
 
         if with_3dspline_prior:
             _task = ["compute_advanced_badpix", {"threshold_badpix": 10, "mppool": mppool,
